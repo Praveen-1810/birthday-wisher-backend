@@ -7,8 +7,8 @@ import multer from "multer";
 import path from "path";
 import { fileURLToPath } from "url";
 import fs from "fs";
-import Wish from "./models/wish.js";
-import Feedback from "./models/feedback.js";
+import Wish from "./models/models_Wish.js";
+import Feedback from "./models/models_feedback.js";
 
 dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
