@@ -7,8 +7,8 @@ import multer from "multer";
 import path from "path";
 import { fileURLToPath } from "url";
 import fs from "fs";
-import Wish from "./models_wish.js";
-import Feedback from "./models_feedback.js";
+import Wish from "./models/wish.js";
+import Feedback from "./models/feedback.js";
 
 dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
@@ -18,28 +18,22 @@ const app = express();
 
 // === CORS ===
 app.use(cors({
-  origin: process.env.CLIENT_URL || "*" // Replace * with your frontend URL in production
+  origin: process.env.CLIENT_URL || "*"
 }));
 
 app.use(express.json());
 
 // === Ensure uploads folder exists ===
 const uploadsDir = path.join(__dirname, "uploads");
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir);
-}
+if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir);
 
 // === Serve uploads publicly ===
 app.use("/uploads", express.static(uploadsDir));
 
 // === Multer storage ===
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, uploadsDir);
-  },
-  filename: (req, file, cb) => {
-    cb(null, Date.now() + path.extname(file.originalname));
-  },
+  destination: (req, file, cb) => cb(null, uploadsDir),
+  filename: (req, file, cb) => cb(null, Date.now() + path.extname(file.originalname)),
 });
 const upload = multer({ storage });
 
@@ -58,7 +52,7 @@ async function connectDB() {
 
   } catch (err) {
     console.error("❌ MongoDB connection error:", err);
-    process.exit(1); // Stop server if DB fails
+    process.exit(1);
   }
 }
 connectDB();
