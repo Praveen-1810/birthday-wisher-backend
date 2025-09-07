@@ -15,28 +15,27 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-app.use(cors()); // for demo, allow all. Later restrict with FRONTEND_URL.
+
+// === CORS ===
+app.use(cors({
+  origin: process.env.CLIENT_URL || "*" // Replace * with your frontend URL in production
+}));
+
 app.use(express.json());
 
-// Serve uploads folder publicly
-app.use("/uploads", express.static(path.join(__dirname, "uploads")));
-
-// === Connect to MongoDB Atlas ===
-async function connectDB() {
-  try {
-    await mongoose.connect(process.env.MONGO_URI);
-    console.log("✅ MongoDB Connected");
-  } catch (err) {
-    console.error("❌ MongoDB Error:", err);
-    process.exit(1);
-  }
+// === Ensure uploads folder exists ===
+const uploadsDir = path.join(__dirname, "uploads");
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir);
 }
-connectDB();
 
-// === Multer storage (for images + video) ===
+// === Serve uploads publicly ===
+app.use("/uploads", express.static(uploadsDir));
+
+// === Multer storage ===
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, path.join(__dirname, "uploads"));
+    cb(null, uploadsDir);
   },
   filename: (req, file, cb) => {
     cb(null, Date.now() + path.extname(file.originalname));
@@ -44,9 +43,32 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
-/**
- * Create a new wish
- */
+// === MongoDB connection ===
+const PORT = process.env.PORT || 5000;
+
+async function connectDB() {
+  try {
+    await mongoose.connect(process.env.MONGO_URI);
+    console.log("✅ MongoDB Connected");
+
+    // Start server after DB connection
+    app.listen(PORT, () => {
+      console.log(`🚀 Server running on port ${PORT}`);
+    });
+
+  } catch (err) {
+    console.error("❌ MongoDB connection error:", err);
+    process.exit(1); // Stop server if DB fails
+  }
+}
+connectDB();
+
+// === Routes ===
+
+// Test route
+app.get("/", (req, res) => res.send("🎉 Backend running"));
+
+// Create a new wish
 app.post(
   "/api/wish",
   upload.fields([
@@ -57,13 +79,11 @@ app.post(
     try {
       const { name, message, sender } = req.body;
       if (!name || !message || !sender) {
-        return res
-          .status(400)
-          .json({ error: "name, message & sender are required" });
+        return res.status(400).json({ error: "name, message & sender are required" });
       }
 
       const images = (req.files["images"] || []).map(
-        (f) => `${req.protocol}://${req.get("host")}/uploads/${f.filename}`
+        f => `${req.protocol}://${req.get("host")}/uploads/${f.filename}`
       );
 
       const video =
@@ -71,13 +91,7 @@ app.post(
           ? `${req.protocol}://${req.get("host")}/uploads/${req.files["video"][0].filename}`
           : null;
 
-      const newWish = await Wish.create({
-        name,
-        message,
-        sender,
-        images,
-        video,
-      });
+      const newWish = await Wish.create({ name, message, sender, images, video });
 
       const baseFrontend = process.env.BASE_URL || "http://localhost:5173";
       const link = `${baseFrontend}/wish/${newWish._id}`;
@@ -99,19 +113,13 @@ app.post(
   }
 );
 
-/**
- * Fetch a single wish
- */
+// Fetch a single wish
 app.get("/api/wish/:id", async (req, res) => {
   try {
     const { id } = req.params;
-    let wish;
-
-    if (mongoose.Types.ObjectId.isValid(id)) {
-      wish = await Wish.findById(id);
-    } else {
-      wish = await Wish.findOne({ _id: id });
-    }
+    let wish = mongoose.Types.ObjectId.isValid(id)
+      ? await Wish.findById(id)
+      : await Wish.findOne({ _id: id });
 
     if (!wish) return res.status(404).json({ error: "Wish not found" });
 
@@ -130,9 +138,7 @@ app.get("/api/wish/:id", async (req, res) => {
   }
 });
 
-/**
- * Fetch all wishes
- */
+// Fetch all wishes
 app.get("/api/wishes", async (req, res) => {
   try {
     const list = await Wish.find().sort({ createdAt: -1 });
@@ -143,30 +149,20 @@ app.get("/api/wishes", async (req, res) => {
   }
 });
 
-/**
- * Serve video by wish ID
- */
+// Serve video by wish ID
 app.get("/video/:id", async (req, res) => {
   try {
     const { id } = req.params;
-    let wish;
+    let wish = mongoose.Types.ObjectId.isValid(id)
+      ? await Wish.findById(id)
+      : await Wish.findOne({ _id: id });
 
-    if (mongoose.Types.ObjectId.isValid(id)) {
-      wish = await Wish.findById(id);
-    } else {
-      wish = await Wish.findOne({ _id: id });
-    }
-
-    if (!wish || !wish.video) {
-      return res.status(404).json({ error: "Video not found" });
-    }
+    if (!wish || !wish.video) return res.status(404).json({ error: "Video not found" });
 
     const filename = path.basename(wish.video);
-    const filePath = path.join(__dirname, "uploads", filename);
+    const filePath = path.join(uploadsDir, filename);
 
-    if (!fs.existsSync(filePath)) {
-      return res.status(404).json({ error: "File missing" });
-    }
+    if (!fs.existsSync(filePath)) return res.status(404).json({ error: "File missing" });
 
     res.set("Content-Type", "video/mp4");
     fs.createReadStream(filePath).pipe(res);
@@ -176,13 +172,10 @@ app.get("/video/:id", async (req, res) => {
   }
 });
 
-/**
- * Save feedback to MongoDB Atlas
- */
+// Save feedback
 app.post("/api/feedback", async (req, res) => {
   try {
     const { feedback } = req.body;
-
     if (!feedback || feedback.trim() === "") {
       return res.status(400).json({ error: "Feedback cannot be empty" });
     }
@@ -198,8 +191,3 @@ app.post("/api/feedback", async (req, res) => {
     res.status(500).json({ error: "Failed to save feedback" });
   }
 });
-
-app.get("/", (req, res) => res.send("🎉 Backend running"));
-
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
