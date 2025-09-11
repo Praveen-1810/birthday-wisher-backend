@@ -11,6 +11,7 @@ import Wish from "./models/models_Wish.js";
 import Feedback from "./models/models_feedback.js";
 
 dotenv.config();
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -19,7 +20,7 @@ const app = express();
 // === CORS ===
 const allowedOrigins = [
   "http://localhost:5173", // dev
-  "https://birthday-wisher-frontend-jylu.vercel.app" // deployed frontend
+  process.env.CLIENT_URL || "https://birthday-wisher-frontend-jylu.vercel.app", // deployed frontend
 ];
 
 app.use(
@@ -74,7 +75,7 @@ connectDB();
 // === Routes ===
 
 // Test route
-app.get("/", (req, res) => res.send("🎉 Backend running"));
+app.get("/api", (req, res) => res.send("🎉 Backend running"));
 
 // Create a new wish
 app.post(
@@ -109,9 +110,10 @@ app.post(
         video,
       });
 
-      // ✅ Use BASE_URL from .env, fallback to deployed frontend
+      // ✅ Use BASE_URL from .env or fallback to frontend
       const baseFrontend =
         process.env.BASE_URL ||
+        process.env.CLIENT_URL ||
         "https://birthday-wisher-frontend-jylu.vercel.app";
 
       const link = `${baseFrontend}/wish/${newWish._id}`;
@@ -137,10 +139,10 @@ app.post(
 app.get("/api/wish/:id", async (req, res) => {
   try {
     const { id } = req.params;
-    let wish = mongoose.Types.ObjectId.isValid(id)
-      ? await Wish.findById(id)
-      : await Wish.findOne({ _id: id });
+    if (!mongoose.Types.ObjectId.isValid(id))
+      return res.status(400).json({ error: "Invalid wish ID" });
 
+    const wish = await Wish.findById(id);
     if (!wish) return res.status(404).json({ error: "Wish not found" });
 
     res.json({
@@ -173,10 +175,10 @@ app.get("/api/wishes", async (req, res) => {
 app.get("/video/:id", async (req, res) => {
   try {
     const { id } = req.params;
-    let wish = mongoose.Types.ObjectId.isValid(id)
-      ? await Wish.findById(id)
-      : await Wish.findOne({ _id: id });
+    if (!mongoose.Types.ObjectId.isValid(id))
+      return res.status(400).json({ error: "Invalid wish ID" });
 
+    const wish = await Wish.findById(id);
     if (!wish || !wish.video)
       return res.status(404).json({ error: "Video not found" });
 
@@ -202,9 +204,7 @@ app.post("/api/feedback", async (req, res) => {
       return res.status(400).json({ error: "Feedback cannot be empty" });
     }
 
-    const newFeedback = new Feedback({ feedback });
-    await newFeedback.save();
-
+    const newFeedback = await Feedback.create({ feedback });
     console.log("✅ Saved feedback:", newFeedback);
 
     res.json({ message: "Thank you for your feedback!", feedback: newFeedback });
@@ -212,4 +212,14 @@ app.post("/api/feedback", async (req, res) => {
     console.error("Error saving feedback:", err);
     res.status(500).json({ error: "Failed to save feedback" });
   }
+});
+
+// === Serve frontend in production (Vite/CRA) ===
+app.use(express.static(path.join(__dirname, "dist"))); // Vite
+// app.use(express.static(path.join(__dirname, "build"))); // CRA fallback
+
+// SPA fallback for React routing
+app.get("*", (req, res) => {
+  res.sendFile(path.join(__dirname, "dist", "index.html")); // Vite
+  // res.sendFile(path.join(__dirname, "build", "index.html")); // CRA
 });
