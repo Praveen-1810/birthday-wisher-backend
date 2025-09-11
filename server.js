@@ -110,7 +110,6 @@ app.post(
         video,
       });
 
-      // ✅ Use BASE_URL from .env or fallback to frontend
       const baseFrontend =
         process.env.BASE_URL ||
         process.env.CLIENT_URL ||
@@ -214,12 +213,16 @@ app.post("/api/feedback", async (req, res) => {
   }
 });
 
-// === Serve frontend in production (Vite/CRA) ===
-app.use(express.static(path.join(__dirname, "dist"))); // Vite
-// app.use(express.static(path.join(__dirname, "build"))); // CRA fallback
+// === Serve frontend (Option 1: frontend/dist) ===
+const frontendDir = path.join(__dirname, "frontend", "dist");
+
+if (!fs.existsSync(frontendDir)) {
+  console.warn("⚠️ Frontend build folder not found. Run 'npm run build' in frontend/");
+}
+
+app.use(express.static(frontendDir));
 
 // SPA fallback for React routing
 app.get("*", (req, res) => {
-  res.sendFile(path.join(__dirname, "dist", "index.html")); // Vite
-  // res.sendFile(path.join(__dirname, "build", "index.html")); // CRA
+  res.sendFile(path.join(frontendDir, "index.html"));
 });
