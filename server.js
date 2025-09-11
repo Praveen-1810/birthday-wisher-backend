@@ -19,36 +19,35 @@ const app = express();
 
 // === CORS ===
 const allowedOrigins = [
-  process.env.CLIENT_URL || "http://localhost:5173",
+  process.env.CLIENT_URL || "https://birthday-wisher-frontend-jylu.vercel.app",
+  "http://localhost:5173",
 ];
 
 app.use(
   cors({
     origin: (origin, callback) => {
-      if (!origin || allowedOrigins.includes(origin)) {
-        callback(null, true);
-      } else {
-        callback(new Error("Not allowed by CORS"));
-      }
+      if (!origin || allowedOrigins.includes(origin)) callback(null, true);
+      else callback(new Error("Not allowed by CORS"));
     },
     credentials: true,
   })
 );
+
+// Handle preflight requests for POST/PUT
+app.options("*", cors({ origin: allowedOrigins, credentials: true }));
 
 app.use(express.json());
 
 // === Ensure uploads folder exists ===
 const uploadsDir = path.join(__dirname, "uploads");
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir);
-
-// === Serve uploads publicly ===
 app.use("/uploads", express.static(uploadsDir));
 
 // === Multer storage ===
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, uploadsDir),
   filename: (req, file, cb) =>
-    cb(null, Date.now() + path.extname(file.originalname)),
+    cb(null, Date.now() + "-" + file.originalname.replace(/\s+/g, "_")),
 });
 const upload = multer({ storage });
 
@@ -59,10 +58,7 @@ async function connectDB() {
   try {
     await mongoose.connect(process.env.MONGO_URI);
     console.log("✅ MongoDB Connected");
-
-    app.listen(PORT, () => {
-      console.log(`🚀 Server running on port ${PORT}`);
-    });
+    app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
   } catch (err) {
     console.error("❌ MongoDB connection error:", err);
     process.exit(1);
@@ -73,6 +69,7 @@ connectDB();
 // === API Routes ===
 app.get("/api", (req, res) => res.send("🎉 Backend running"));
 
+// Create a new wish
 app.post(
   "/api/wish",
   upload.fields([
@@ -90,15 +87,13 @@ app.post(
       );
 
       const video =
-        req.files["video"] && req.files["video"][0]
+        req.files["video"]?.[0]
           ? `${req.protocol}://${req.get("host")}/uploads/${req.files["video"][0].filename}`
           : null;
 
       const newWish = await Wish.create({ name, message, sender, images, video });
 
-      const baseFrontend =
-        process.env.BASE_URL || process.env.CLIENT_URL || "https://birthday-wisher-frontend-jylu.vercel.app";
-
+      const baseFrontend = process.env.CLIENT_URL || "http://localhost:5173";
       const link = `${baseFrontend}/wish/${newWish._id}`;
 
       res.json({
@@ -118,6 +113,7 @@ app.post(
   }
 );
 
+// Fetch single wish
 app.get("/api/wish/:id", async (req, res) => {
   try {
     const { id } = req.params;
@@ -127,13 +123,22 @@ app.get("/api/wish/:id", async (req, res) => {
     const wish = await Wish.findById(id);
     if (!wish) return res.status(404).json({ error: "Wish not found" });
 
-    res.json({ id: wish._id, name: wish.name, message: wish.message, sender: wish.sender, images: wish.images, video: wish.video, createdAt: wish.createdAt });
+    res.json({
+      id: wish._id,
+      name: wish.name,
+      message: wish.message,
+      sender: wish.sender,
+      images: wish.images,
+      video: wish.video,
+      createdAt: wish.createdAt,
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });
   }
 });
 
+// Fetch all wishes
 app.get("/api/wishes", async (req, res) => {
   try {
     const list = await Wish.find().sort({ createdAt: -1 });
@@ -144,17 +149,17 @@ app.get("/api/wishes", async (req, res) => {
   }
 });
 
+// Serve video by wish ID
 app.get("/video/:id", async (req, res) => {
   try {
     const { id } = req.params;
     if (!mongoose.Types.ObjectId.isValid(id)) return res.status(400).json({ error: "Invalid wish ID" });
 
     const wish = await Wish.findById(id);
-    if (!wish || !wish.video) return res.status(404).json({ error: "Video not found" });
+    if (!wish?.video) return res.status(404).json({ error: "Video not found" });
 
     const filename = path.basename(wish.video);
     const filePath = path.join(uploadsDir, filename);
-
     if (!fs.existsSync(filePath)) return res.status(404).json({ error: "File missing" });
 
     res.set("Content-Type", "video/mp4");
@@ -165,11 +170,11 @@ app.get("/video/:id", async (req, res) => {
   }
 });
 
+// Save feedback
 app.post("/api/feedback", async (req, res) => {
   try {
     const { feedback } = req.body;
-    if (!feedback || feedback.trim() === "")
-      return res.status(400).json({ error: "Feedback cannot be empty" });
+    if (!feedback?.trim()) return res.status(400).json({ error: "Feedback cannot be empty" });
 
     const newFeedback = await Feedback.create({ feedback });
     console.log("✅ Saved feedback:", newFeedback);
@@ -181,20 +186,13 @@ app.post("/api/feedback", async (req, res) => {
   }
 });
 
-// === Serve frontend from frontend/dist ===
+// === Serve frontend build ===
 const frontendDir = path.join(__dirname, "frontend", "dist");
+if (fs.existsSync(frontendDir)) app.use(express.static(frontendDir));
 
-if (!fs.existsSync(frontendDir)) {
-  console.warn("⚠️ Frontend build folder not found. Run 'npm run build' in frontend/");
-}
-
-app.use(express.static(frontendDir));
-
-// SPA fallback
+// SPA fallback for React Router
 app.get("*", (req, res) => {
-  if (fs.existsSync(path.join(frontendDir, "index.html"))) {
-    res.sendFile(path.join(frontendDir, "index.html"));
-  } else {
-    res.status(404).send("Frontend not built yet. Run 'npm run build' in frontend.");
-  }
+  const indexPath = path.join(frontendDir, "index.html");
+  if (fs.existsSync(indexPath)) res.sendFile(indexPath);
+  else res.status(404).send("Frontend not built yet. Run 'npm run build' in frontend.");
 });
