@@ -17,8 +17,20 @@ const __dirname = path.dirname(__filename);
 const app = express();
 
 // === CORS ===
+const allowedOrigins = [
+  "http://localhost:5173", // dev
+  "https://birthday-wisher-frontend-jylu.vercel.app" // deployed frontend
+];
+
 app.use(cors({
-  origin: process.env.CLIENT_URL || "*"
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error("Not allowed by CORS"));
+    }
+  },
+  credentials: true
 }));
 
 app.use(express.json());
