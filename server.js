@@ -19,8 +19,7 @@ const app = express();
 
 // === CORS ===
 const allowedOrigins = [
-  "http://localhost:5173", // dev
-  process.env.CLIENT_URL || "https://birthday-wisher-frontend-jylu.vercel.app", // deployed frontend
+  process.env.CLIENT_URL || "http://localhost:5173",
 ];
 
 app.use(
@@ -61,7 +60,6 @@ async function connectDB() {
     await mongoose.connect(process.env.MONGO_URI);
     console.log("✅ MongoDB Connected");
 
-    // Start server after DB connection
     app.listen(PORT, () => {
       console.log(`🚀 Server running on port ${PORT}`);
     });
@@ -72,12 +70,9 @@ async function connectDB() {
 }
 connectDB();
 
-// === Routes ===
-
-// Test route
+// === API Routes ===
 app.get("/api", (req, res) => res.send("🎉 Backend running"));
 
-// Create a new wish
 app.post(
   "/api/wish",
   upload.fields([
@@ -87,11 +82,8 @@ app.post(
   async (req, res) => {
     try {
       const { name, message, sender } = req.body;
-      if (!name || !message || !sender) {
-        return res
-          .status(400)
-          .json({ error: "name, message & sender are required" });
-      }
+      if (!name || !message || !sender)
+        return res.status(400).json({ error: "name, message & sender are required" });
 
       const images = (req.files["images"] || []).map(
         (f) => `${req.protocol}://${req.get("host")}/uploads/${f.filename}`
@@ -102,18 +94,10 @@ app.post(
           ? `${req.protocol}://${req.get("host")}/uploads/${req.files["video"][0].filename}`
           : null;
 
-      const newWish = await Wish.create({
-        name,
-        message,
-        sender,
-        images,
-        video,
-      });
+      const newWish = await Wish.create({ name, message, sender, images, video });
 
       const baseFrontend =
-        process.env.BASE_URL ||
-        process.env.CLIENT_URL ||
-        "https://birthday-wisher-frontend-jylu.vercel.app";
+        process.env.BASE_URL || process.env.CLIENT_URL || "https://birthday-wisher-frontend-jylu.vercel.app";
 
       const link = `${baseFrontend}/wish/${newWish._id}`;
 
@@ -134,7 +118,6 @@ app.post(
   }
 );
 
-// Fetch a single wish
 app.get("/api/wish/:id", async (req, res) => {
   try {
     const { id } = req.params;
@@ -144,22 +127,13 @@ app.get("/api/wish/:id", async (req, res) => {
     const wish = await Wish.findById(id);
     if (!wish) return res.status(404).json({ error: "Wish not found" });
 
-    res.json({
-      id: wish._id,
-      name: wish.name,
-      message: wish.message,
-      sender: wish.sender,
-      images: wish.images,
-      video: wish.video,
-      createdAt: wish.createdAt,
-    });
+    res.json({ id: wish._id, name: wish.name, message: wish.message, sender: wish.sender, images: wish.images, video: wish.video, createdAt: wish.createdAt });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });
   }
 });
 
-// Fetch all wishes
 app.get("/api/wishes", async (req, res) => {
   try {
     const list = await Wish.find().sort({ createdAt: -1 });
@@ -170,22 +144,18 @@ app.get("/api/wishes", async (req, res) => {
   }
 });
 
-// Serve video by wish ID
 app.get("/video/:id", async (req, res) => {
   try {
     const { id } = req.params;
-    if (!mongoose.Types.ObjectId.isValid(id))
-      return res.status(400).json({ error: "Invalid wish ID" });
+    if (!mongoose.Types.ObjectId.isValid(id)) return res.status(400).json({ error: "Invalid wish ID" });
 
     const wish = await Wish.findById(id);
-    if (!wish || !wish.video)
-      return res.status(404).json({ error: "Video not found" });
+    if (!wish || !wish.video) return res.status(404).json({ error: "Video not found" });
 
     const filename = path.basename(wish.video);
     const filePath = path.join(uploadsDir, filename);
 
-    if (!fs.existsSync(filePath))
-      return res.status(404).json({ error: "File missing" });
+    if (!fs.existsSync(filePath)) return res.status(404).json({ error: "File missing" });
 
     res.set("Content-Type", "video/mp4");
     fs.createReadStream(filePath).pipe(res);
@@ -195,25 +165,23 @@ app.get("/video/:id", async (req, res) => {
   }
 });
 
-// Save feedback
 app.post("/api/feedback", async (req, res) => {
   try {
     const { feedback } = req.body;
-    if (!feedback || feedback.trim() === "") {
+    if (!feedback || feedback.trim() === "")
       return res.status(400).json({ error: "Feedback cannot be empty" });
-    }
 
     const newFeedback = await Feedback.create({ feedback });
     console.log("✅ Saved feedback:", newFeedback);
 
     res.json({ message: "Thank you for your feedback!", feedback: newFeedback });
   } catch (err) {
-    console.error("Error saving feedback:", err);
+    console.error(err);
     res.status(500).json({ error: "Failed to save feedback" });
   }
 });
 
-// === Serve frontend (Option 1: frontend/dist) ===
+// === Serve frontend from frontend/dist ===
 const frontendDir = path.join(__dirname, "frontend", "dist");
 
 if (!fs.existsSync(frontendDir)) {
@@ -222,7 +190,11 @@ if (!fs.existsSync(frontendDir)) {
 
 app.use(express.static(frontendDir));
 
-// SPA fallback for React routing
+// SPA fallback
 app.get("*", (req, res) => {
-  res.sendFile(path.join(frontendDir, "index.html"));
+  if (fs.existsSync(path.join(frontendDir, "index.html"))) {
+    res.sendFile(path.join(frontendDir, "index.html"));
+  } else {
+    res.status(404).send("Frontend not built yet. Run 'npm run build' in frontend.");
+  }
 });
