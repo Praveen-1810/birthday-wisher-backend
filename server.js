@@ -22,16 +22,18 @@ const allowedOrigins = [
   "https://birthday-wisher-frontend-jylu.vercel.app" // deployed frontend
 ];
 
-app.use(cors({
-  origin: (origin, callback) => {
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error("Not allowed by CORS"));
-    }
-  },
-  credentials: true
-}));
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error("Not allowed by CORS"));
+      }
+    },
+    credentials: true,
+  })
+);
 
 app.use(express.json());
 
@@ -45,7 +47,8 @@ app.use("/uploads", express.static(uploadsDir));
 // === Multer storage ===
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, uploadsDir),
-  filename: (req, file, cb) => cb(null, Date.now() + path.extname(file.originalname)),
+  filename: (req, file, cb) =>
+    cb(null, Date.now() + path.extname(file.originalname)),
 });
 const upload = multer({ storage });
 
@@ -61,7 +64,6 @@ async function connectDB() {
     app.listen(PORT, () => {
       console.log(`🚀 Server running on port ${PORT}`);
     });
-
   } catch (err) {
     console.error("❌ MongoDB connection error:", err);
     process.exit(1);
@@ -85,22 +87,38 @@ app.post(
     try {
       const { name, message, sender } = req.body;
       if (!name || !message || !sender) {
-        return res.status(400).json({ error: "name, message & sender are required" });
+        return res
+          .status(400)
+          .json({ error: "name, message & sender are required" });
       }
 
       const images = (req.files["images"] || []).map(
-        f => `${req.protocol}://${req.get("host")}/uploads/${f.filename}`
+        (f) => `${req.protocol}://${req.get("host")}/uploads/${f.filename}`
       );
 
       const video =
         req.files["video"] && req.files["video"][0]
-          ? `${req.protocol}://${req.get("host")}/uploads/${req.files["video"][0].filename}`
+          ? `${req.protocol}://${req.get("host")}/uploads/${
+              req.files["video"][0].filename
+            }`
           : null;
 
-      const newWish = await Wish.create({ name, message, sender, images, video });
+      const newWish = await Wish.create({
+        name,
+        message,
+        sender,
+        images,
+        video,
+      });
 
-      const baseFrontend = process.env.BASE_URL || "http://localhost:5173";
-      const link = `${baseFrontend}/wish/${newWish._id}`;
+      // ✅ Auto-detect frontend URL
+      const frontendURL =
+        process.env.BASE_URL ||
+        (process.env.NODE_ENV === "production"
+          ? "https://birthday-wisher-frontend-jylu.vercel.app"
+          : "http://localhost:5173");
+
+      const link = `${frontendURL}/wish/${newWish._id}`;
 
       res.json({
         link,
@@ -163,12 +181,14 @@ app.get("/video/:id", async (req, res) => {
       ? await Wish.findById(id)
       : await Wish.findOne({ _id: id });
 
-    if (!wish || !wish.video) return res.status(404).json({ error: "Video not found" });
+    if (!wish || !wish.video)
+      return res.status(404).json({ error: "Video not found" });
 
     const filename = path.basename(wish.video);
     const filePath = path.join(uploadsDir, filename);
 
-    if (!fs.existsSync(filePath)) return res.status(404).json({ error: "File missing" });
+    if (!fs.existsSync(filePath))
+      return res.status(404).json({ error: "File missing" });
 
     res.set("Content-Type", "video/mp4");
     fs.createReadStream(filePath).pipe(res);
