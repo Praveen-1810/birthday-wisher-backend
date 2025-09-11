@@ -98,9 +98,7 @@ app.post(
 
       const video =
         req.files["video"] && req.files["video"][0]
-          ? `${req.protocol}://${req.get("host")}/uploads/${
-              req.files["video"][0].filename
-            }`
+          ? `${req.protocol}://${req.get("host")}/uploads/${req.files["video"][0].filename}`
           : null;
 
       const newWish = await Wish.create({
@@ -111,14 +109,12 @@ app.post(
         video,
       });
 
-      // ✅ Auto-detect frontend URL
-      const frontendURL =
+      // ✅ Use BASE_URL from .env, fallback to deployed frontend
+      const baseFrontend =
         process.env.BASE_URL ||
-        (process.env.NODE_ENV === "production"
-          ? "https://birthday-wisher-frontend-jylu.vercel.app"
-          : "http://localhost:5173");
+        "https://birthday-wisher-frontend-jylu.vercel.app";
 
-      const link = `${frontendURL}/wish/${newWish._id}`;
+      const link = `${baseFrontend}/wish/${newWish._id}`;
 
       res.json({
         link,
